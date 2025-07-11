@@ -11,7 +11,8 @@ const client = new Client({
 
 const TOKEN = process.env.DISCORD_TOKEN;
 
-console.log(DISCORD_TOKEN);
+// Log the token that was loaded from the environment so we know dotenv worked
+console.log(TOKEN);
 // client.once('ready', () => {
 //     console.log(`Logged in as ${client.user.tag}!`);
 // });
