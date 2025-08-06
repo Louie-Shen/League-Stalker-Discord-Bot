@@ -2,7 +2,9 @@ require('dotenv').config();
 
 async function getPlayerId(name, tag) {
     try {
-        const response = await fetch("https://americas.api.riotgames.com/riot/account/v1/accounts/by-riot-id/" + name + "/" + tag, 
+        const response = await fetch(
+            "https://americas.api.riotgames.com/riot/account/v1/accounts/by-riot-id/"
+             + name + "/" + tag, 
             {
             headers: {
                 'X-Riot-Token': process.env.RIOT_TOKEN

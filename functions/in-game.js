@@ -2,7 +2,7 @@ require('dotenv').config()
 
 async function stalkPlayer(puuid) {
     try {
-         const response = await fetch("https://na1.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/" + PUUID, 
+         const response = await fetch("https://na1.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/" + puuid, 
             {
             headers: {
                 'X-Riot-Token': process.env.RIOT_TOKEN
@@ -17,7 +17,7 @@ async function stalkPlayer(puuid) {
         }
         return false
     } catch (err) {
-        console.error('Error spectating player: '. err);
+        console.error('Error spectating player: ', err);
         return null
     }
 }

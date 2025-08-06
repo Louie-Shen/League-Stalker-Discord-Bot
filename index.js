@@ -1,8 +1,9 @@
 require('dotenv').config();
 
 const { Client, GatewayIntentBits } = require('discord.js');
-const { getPlayerId } = require('./get-player-Id');
-const { stalkPlayer } = require('./in-game');
+const { getPlayerId } = require('./functions/get-player-Id');
+const { stalkPlayer } = require('./functions/in-game');
+const { startKeepAliveServer } = require('./functions/upTime');
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -12,6 +13,8 @@ const client = new Client({
 });
 
 const TOKEN = process.env.DISCORD_TOKEN;
+
+startKeepAliveServer();
 
 client.once('ready', () => {
     console.log(`Logged in as ${client.user.tag}!`);
