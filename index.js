@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 require('dotenv').config();
 
 const { Client, GatewayIntentBits } = require('discord.js');
@@ -74,3 +75,30 @@ client.on('messageCreate', async message => {
 });
 
 client.login(TOKEN);
+=======
+require('dotenv').config();
+
+const { Client, GatewayIntentBits } = require('discord.js');
+const client = new Client({
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent
+    ]
+});
+
+const TOKEN = process.env.DISCORD_TOKEN;
+
+console.log(DISCORD_TOKEN);
+// client.once('ready', () => {
+//     console.log(`Logged in as ${client.user.tag}!`);
+// });
+
+// client.on('messageCreate', message => {
+//     if (message.content === '!ping') {
+//         message.reply('Pong!');
+//     }
+// });
+
+// client.login(TOKEN);
+>>>>>>> 9f8fda9eb0326338e260d52d56a4e08b98b2769f
