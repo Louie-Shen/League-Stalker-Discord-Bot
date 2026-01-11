@@ -8,17 +8,24 @@ async function stalkPlayer(puuid) {
                 'X-Riot-Token': process.env.RIOT_TOKEN
             }
         });
+        
+        // 404 means player is not in game
+        if (response.status === 404) {
+            return { inGame: false, gameType: null };
+        }
+        
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
+        
         const data = await response.json();
-        if (data.gameType == 'RANKED') {
-            return true
-        }
-        return false
+        return { 
+            inGame: true, 
+            gameType: data.gameType || null 
+        };
     } catch (err) {
         console.error('Error spectating player: ', err);
-        return null
+        return null;
     }
 }
 
