@@ -7,6 +7,7 @@ const { startKeepAliveServer } = require('./functions/upTime');
 const { addTrackedPlayer, removeTrackedPlayer, getTrackedPlayers } = require('./functions/tracked-players');
 const { setGuildChannel, getAllGuildChannels } = require('./functions/guild-channels');
 const { setRankedOnly, getAllGuildSettings, getRankedOnly } = require('./functions/guild-settings');
+const { addPingSubscriber, removePingSubscriber, getPingSubscribers } = require('./functions/ping-list');
 
 const client = new Client({
     intents: [
@@ -32,7 +33,31 @@ client.on('messageCreate', async message => {
     if (message.author.bot) return;
 
     if (message.content === '!ping') {
-        message.reply('Pong!');
+        if (!message.guild) {
+            return message.reply('This command can only be used in a server, not in DMs.');
+        }
+
+        try {
+            const result = await addPingSubscriber(message.guild.id, message.author.id);
+            message.reply(result.message);
+        } catch (error) {
+            console.error(error);
+            message.reply('Sorry, an error occurred while updating the ping list.');
+        }
+    }
+
+    if (message.content === '!pingremove') {
+        if (!message.guild) {
+            return message.reply('This command can only be used in a server, not in DMs.');
+        }
+
+        try {
+            const result = await removePingSubscriber(message.guild.id, message.author.id);
+            message.reply(result.message);
+        } catch (error) {
+            console.error(error);
+            message.reply('Sorry, an error occurred while updating the ping list.');
+        }
     }
 
     if (message.content.startsWith('!find ')) {
@@ -249,7 +274,10 @@ async function notifyPlayerInGame(player, gameType) {
                 const channel = await client.channels.fetch(channelId);
                 if (channel) {
                     const gameTypeText = isRanked ? 'RANKED' : gameType || 'game';
-                    await channel.send(`🎮 **${player.username}#${player.tag}** started a ${gameTypeText} game!`);
+                    const pingSubscribers = await getPingSubscribers(guildId);
+                    const pingMentions = pingSubscribers.map(userId => `<@${userId}>`).join(' ');
+                    const pingText = pingMentions ? ` ${pingMentions}` : '';
+                    await channel.send(`🎮 **${player.username}#${player.tag}** started a ${gameTypeText} game!${pingText}`);
                 }
             } catch (error) {
                 console.error(`Error sending notification to channel ${channelId}:`, error);
