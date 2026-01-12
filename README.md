@@ -20,6 +20,35 @@ A Discord bot that automatically monitors League of Legends players and sends no
    node index.js
    ```
 
+## Docker
+
+1. Build the image:
+   ```bash
+   docker build -t league-stalker-bot .
+   ```
+2. Run the container:
+   ```bash
+   docker run --env DISCORD_TOKEN=your-discord-bot-token \
+     --env RIOT_TOKEN=your-riot-api-token \
+     --env PORT=3000 \
+     -p 3000:3000 \
+     league-stalker-bot
+   ```
+3. Verify the health check endpoint:
+   ```bash
+   curl http://localhost:3000/
+   ```
+
+## Deployment (Render + Docker)
+
+1. Create a new **Web Service** on Render and choose **Docker** as the runtime.
+2. Connect the repository and set the service region/plan.
+3. Set environment variables:
+   - `DISCORD_TOKEN`
+   - `RIOT_TOKEN`
+4. Add a health check path of `/` (this maps to the Express endpoint in `functions/upTime.js`).
+5. Add a free uptime ping service (for example, UptimeRobot) to hit `https://<your-service-host>/` every 5–10 minutes.
+
 ## Commands
 
 ### General Commands
