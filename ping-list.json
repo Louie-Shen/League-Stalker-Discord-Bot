@@ -1,1 +1,17 @@
-{}
+{
+  "test-guild": {
+    "subscriptions": {
+      "GLOBAL": {
+        "user1": "all"
+      }
+    }
+  },
+  "599709364194115615": {
+    "subscriptions": {
+      "GLOBAL": {},
+      "kzMoAu504Fb1HWwSEH2pQLyiLIHtnSsTQa5itazMDvu6s2g53QupT8M_s0zEAQa7QPCAb7ntV3aegg": {
+        "381487519704809472": "all"
+      }
+    }
+  }
+}

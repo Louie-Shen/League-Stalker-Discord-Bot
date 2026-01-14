@@ -56,21 +56,37 @@ A Discord bot that automatically monitors League of Legends players and sends no
   - Each server can have its own preference
   - Example: Run `!gamemode` once to switch to all games, run it again to switch back to ranked-only
 
+### User Subscriptions
+- `!ping [type] [player]` - Subscribe to receive mentions when players start games
+  - `!ping` or `!ping all` - Subscribe to ALL games from ALL players
+  - `!ping ranked` - Subscribe to RANKED games only (from ALL players)
+  - `!ping all username#tag` - Subscribe to ALL games from a SPECIFIC player
+  - `!ping ranked username#tag` - Subscribe to RANKED games from a SPECIFIC player
+  - Example: `!ping ranked Hide on bush#KR1`
+
+- `!pingremove [player]` - Unsubscribe from pings
+  - `!pingremove` - Unsubscribe from ALL global pings
+  - `!pingremove username#tag` - Unsubscribe from a SPECIFIC player
+  - Example: `!pingremove Hide on bush#KR1`
+
+### Help
+- `!help` - Lists all available commands and usage instructions
+
 ## How It Works
 
 1. **Track Players**: Use `!track` to add players you want to monitor
 2. **Set Notification Channel**: Use `!channel` in the channel where you want notifications
-3. **Configure Game Mode** (optional): Use `!gamemode` to toggle between ranked-only and all games (default: ranked-only)
-4. **Automatic Monitoring**: The bot checks all tracked players every 30 seconds
-5. **Notifications**: When a tracked player starts a game, the bot sends a notification to servers that:
-   - Have configured a notification channel
-   - Have their game mode setting match the game type (ranked-only servers only get ranked games, all-games servers get any game)
+3. **Configure Game Mode** (optional): Use `!gamemode` to toggle server-wide filter (default: ranked-only)
+4. **Subscribe to Pings** (optional): Use `!ping` to get mentioned when games start
+5. **Automatic Monitoring**: The bot checks all tracked players every 30 seconds
+6. **Notifications**: When a tracked player starts a game, the bot sends a notification to servers that have configured a notification channel. Users who subscribed via `!ping` will be mentioned.
 
 ## Notes
 
-- **Default Behavior**: By default, servers only receive notifications for **RANKED** games
+- **Ping Preference**: You can subscribe to pings globally (for all tracked players) or for specific players.
+- **Default Behavior**: By default, servers only receive notifications for **RANKED** games (configurable via `!gamemode`)
 - **Game Mode Toggle**: Use `!gamemode` to switch between ranked-only and all games per server
 - **Notification Channels**: Each server can have its own notification channel
-- **Player Tracking**: Player tracking is global (shared across all servers)
+- **Player Tracking**: Player tracking is global await(shared across all servers)
 - **Multi-Server**: Notifications are sent to all servers that have configured notification channels and match their game mode preference
 - The bot monitors players every 30 seconds, so there may be a slight delay in notifications
