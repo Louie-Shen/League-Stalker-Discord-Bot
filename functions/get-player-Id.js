@@ -1,10 +1,12 @@
 require('dotenv').config();
 
+const { riotFetch } = require('./riot-api');
+
 async function getPlayerId(name, tag) {
     try {
-        const response = await fetch(
+        const response = await riotFetch(
             "https://americas.api.riotgames.com/riot/account/v1/accounts/by-riot-id/"
-             + name + "/" + tag, 
+             + encodeURIComponent(name) + "/" + encodeURIComponent(tag),
             {
             headers: {
                 'X-Riot-Token': process.env.RIOT_TOKEN

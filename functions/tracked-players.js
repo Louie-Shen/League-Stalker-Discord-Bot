@@ -1,6 +1,8 @@
 const fs = require('fs').promises;
 const path = require('path');
 const { getPlayerId } = require('./get-player-Id');
+const { calculateMaxTrackedPlayers } = require('./monitor-config');
+const { getPollingSettings } = require('./monitor-settings');
 
 const TRACKED_PLAYERS_FILE = path.join(__dirname, '..', 'tracked-players.json');
 
@@ -52,16 +54,33 @@ async function addTrackedPlayer(usernameTag) {
         return { success: false, message: 'Username or tag is missing' };
     }
     
+    const players = await loadTrackedPlayers();
+    const sameNameExists = players.some(
+        player => `${player.username}#${player.tag}`.toLowerCase() === usernameTag.toLowerCase()
+    );
+    if (sameNameExists) {
+        return { success: false, message: 'Player is already being tracked' };
+    }
+
+    const pollingSettings = await getPollingSettings();
+    if (pollingSettings.mode === 'fixed') {
+        const maxTrackedPlayers = calculateMaxTrackedPlayers(pollingSettings.intervalSeconds);
+        if (players.length >= maxTrackedPlayers) {
+            return {
+                success: false,
+                message: `The ${pollingSettings.intervalSeconds}-second polling interval allows at most ${maxTrackedPlayers} tracked players. Increase it with \`!interval <seconds>\` or use automatic mode with \`!interval\`.`
+            };
+        }
+    }
+
     // Get PUUID using getPlayerId
     const puuid = await getPlayerId(username, tag);
     if (!puuid) {
         return { success: false, message: 'Could not find player with that username and tag' };
     }
     
-    const players = await loadTrackedPlayers();
-    
     // Check if player already exists
-    const exists = players.find(p => p.puuid === puuid || `${p.username}#${p.tag}` === usernameTag);
+    const exists = players.find(p => p.puuid === puuid);
     if (exists) {
         return { success: false, message: 'Player is already being tracked' };
     }

@@ -8,6 +8,17 @@ const { addTrackedPlayer, removeTrackedPlayer, getTrackedPlayers } = require('./
 const { setGuildChannel, getAllGuildChannels } = require('./functions/guild-channels');
 const { setRankedOnly, getAllGuildSettings, getRankedOnly } = require('./functions/guild-settings');
 const { addPingSubscriber, removePingSubscriber, getUsersToPing } = require('./functions/ping-list');
+const {
+    monitorConfig,
+    calculateMinimumIntervalSeconds,
+    calculateMaxTrackedPlayers,
+    getEffectivePollIntervalSeconds
+} = require('./functions/monitor-config');
+const {
+    getPollingSettings,
+    setAutomaticPolling,
+    setFixedPollingInterval
+} = require('./functions/monitor-settings');
 
 const client = new Client({
     intents: [
@@ -247,6 +258,70 @@ client.on('messageCreate', async message => {
         }
     }
 
+    if (message.content === '!interval' || message.content.startsWith('!interval ')) {
+        const argument = message.content.slice('!interval'.length).trim().toLowerCase();
+
+        try {
+            const players = await getTrackedPlayers();
+            const playerCount = players.length;
+            const minimumInterval = calculateMinimumIntervalSeconds(playerCount);
+
+            if (!argument || argument === 'auto' || argument === 'automatic') {
+                await setAutomaticPolling();
+                const maxAtCurrentInterval = calculateMaxTrackedPlayers(minimumInterval);
+                return message.reply(
+                    `Automatic polling enabled. With ${playerCount} tracked player${playerCount === 1 ? '' : 's'}, ` +
+                    `the fastest safe interval is **${minimumInterval} seconds**. ` +
+                    `That interval supports up to **${maxAtCurrentInterval} players** with a ` +
+                    `${monitorConfig.safetyPaddingPercent}% safety margin.`
+                );
+            }
+
+            if (argument === 'status') {
+                const pollingSettings = await getPollingSettings();
+                const effectiveInterval = getEffectivePollIntervalSeconds(playerCount, pollingSettings);
+                const configuredText = pollingSettings.mode === 'automatic'
+                    ? 'automatic'
+                    : `${pollingSettings.intervalSeconds} seconds`;
+                const maxPlayers = calculateMaxTrackedPlayers(effectiveInterval);
+
+                return message.reply(
+                    `Polling mode: **${configuredText}**\n` +
+                    `Tracked players: **${playerCount}**\n` +
+                    `Current effective interval: **${effectiveInterval} seconds**\n` +
+                    `Fastest safe interval for this list: **${minimumInterval} seconds**\n` +
+                    `Maximum players at the effective interval: **${maxPlayers}**`
+                );
+            }
+
+            const requestedInterval = Number(argument);
+            if (!Number.isInteger(requestedInterval) || requestedInterval <= 0) {
+                return message.reply('Use `!interval`, `!interval status`, or `!interval <positive whole seconds>`.');
+            }
+
+            const maxTrackedPlayers = calculateMaxTrackedPlayers(requestedInterval);
+            if (maxTrackedPlayers < Math.max(1, playerCount)) {
+                return message.reply(
+                    `A **${requestedInterval}-second** interval is not safe with ${playerCount} tracked ` +
+                    `player${playerCount === 1 ? '' : 's'}. It allows at most **${maxTrackedPlayers}**. ` +
+                    `The fastest safe interval for the current list is **${minimumInterval} seconds**. ` +
+                    `The polling setting was not changed.`
+                );
+            }
+
+            await setFixedPollingInterval(requestedInterval);
+            return message.reply(
+                `Polling interval set to **${requestedInterval} seconds**. ` +
+                `This allows at most **${maxTrackedPlayers} tracked players** with a ` +
+                `${monitorConfig.safetyPaddingPercent}% safety margin. ` +
+                `The current list contains **${playerCount}**.`
+            );
+        } catch (error) {
+            console.error('Error updating polling interval:', error);
+            return message.reply('Sorry, an error occurred while updating the polling interval.');
+        }
+    }
+
     if (message.content.startsWith('!channel')) {
         // Set the notification channel for this guild (server)
         if (!message.guild) {
@@ -293,6 +368,9 @@ client.on('messageCreate', async message => {
 \`!channel\` - Set the current channel for notifications
 \`!gamemode\` - Toggle server-wide filter (Ranked Only / All Games)
 \`!stalk <puuid>\` - Manually check a player's status by PUUID
+\`!interval\` - Use the fastest safe automatic polling interval
+\`!interval <seconds>\` - Set a fixed interval if the current list permits it
+\`!interval status\` - Show the current interval and tracking capacity
 
 **Ping Subscriptions:**
 \`!ping [ranked|all] [username#tag]\` - Subscribe to pings
@@ -309,23 +387,42 @@ client.on('messageCreate', async message => {
 });
 
 // Monitoring function that checks tracked players periodically
-// Monitoring function that checks tracked players periodically
 async function startMonitoring() {
     console.log('Starting player monitoring...');
-    monitorLoop();
+    console.log(
+        `Riot request budget: ${monitorConfig.requestBudget}/${monitorConfig.rateLimitWindowSeconds}s.`
+    );
+    await monitorLoop();
 }
 
 async function monitorLoop() {
+    let nextCycleDelay = 30000;
+
     try {
         const players = await getTrackedPlayers();
+        const pollingSettings = await getPollingSettings();
+        const intervalSeconds = getEffectivePollIntervalSeconds(players.length, pollingSettings);
+        const intervalMilliseconds = intervalSeconds * 1000;
+        const cycleStartedAt = Date.now();
+        nextCycleDelay = intervalMilliseconds;
 
-        for (const player of players) {
+        if (
+            pollingSettings.mode === 'fixed'
+            && intervalSeconds > pollingSettings.intervalSeconds
+        ) {
+            console.warn(
+                `Configured ${pollingSettings.intervalSeconds}s interval is unsafe for ` +
+                `${players.length} players; using ${intervalSeconds}s.`
+            );
+        }
+
+        for (let index = 0; index < players.length; index++) {
+            const player = players[index];
             try {
                 const currentStatus = await stalkPlayer(player.puuid);
 
                 if (currentStatus === null) {
-                    // If we failed (likely 429 or other error), we should probably wait a bit longer
-                    // But for now, just continue with the standard delay
+                    // Preserve the previous status when Riot cannot answer the request.
                 } else {
                     const previousStatus = playerStatus.get(player.puuid) || { inGame: false, gameType: null, isRanked: false };
 
@@ -341,19 +438,25 @@ async function monitorLoop() {
                     }
                 }
 
-                // Delay between players to avoid Rate Limits (429)
-                // Riot Dev keys are limited. Enc forcing 2 seconds between calls.
-                await new Promise(resolve => setTimeout(resolve, 2000));
             } catch (error) {
                 console.error(`Error checking player ${player.username}#${player.tag}:`, error);
             }
+
+            // Spread checks across the interval instead of sending a burst.
+            const nextCheckAt = cycleStartedAt
+                + Math.round((index + 1) * intervalMilliseconds / players.length);
+            const delay = nextCheckAt - Date.now();
+            if (delay > 0) {
+                await new Promise(resolve => setTimeout(resolve, delay));
+            }
         }
+
+        nextCycleDelay = Math.max(0, cycleStartedAt + intervalMilliseconds - Date.now());
     } catch (error) {
         console.error('Error in monitoring loop:', error);
     }
 
-    // Schedule next cycle after 30 seconds
-    setTimeout(monitorLoop, 30000);
+    setTimeout(monitorLoop, nextCycleDelay);
 }
 
 // Send notification when a player starts a game

@@ -1,6 +1,6 @@
 # Discord League Tracker Bot
 
-A Discord bot that automatically monitors League of Legends players and sends notifications when tracked players start games. The bot checks player status every 30 seconds and sends notifications to configured channels in each server.
+A Discord bot that automatically monitors League of Legends players and sends notifications when tracked players start games. The bot uses a configurable, rate-safe polling interval and sends notifications to configured channels in each server.
 
 ## Setup
 
@@ -15,9 +15,15 @@ A Discord bot that automatically monitors League of Legends players and sends no
    RIOT_TOKEN=your-riot-api-token-here
    ```
 
+   The polling interval is managed with the `!interval` Discord command. The bot
+   uses a 15% safety margin below Riot's published personal-key request limit,
+   calculates safe intervals and tracking capacity, and persists the selected mode
+   across restarts. All Riot requests share a rolling-window limiter and respect
+   `429 Retry-After` responses.
+
 3. Run the bot:
    ```bash
-   node index.js
+   npm start
    ```
 
 ## Commands
@@ -35,12 +41,16 @@ A Discord bot that automatically monitors League of Legends players and sends no
 ### Player Tracking
 - `!track [username#tag]` - Adds a player to the tracking list (automatic monitoring)
   - Example: `!track YourUsername#NA1`
-  - The bot will automatically check this player every 30 seconds
+  - The bot automatically checks this player using the configured safe interval
 
 - `!untrack [username#tag]` - Removes a player from the tracking list
   - Example: `!untrack YourUsername#NA1`
 
 - `!list` - Lists all currently tracked players
+
+- `!interval` - Enables the fastest safe automatic interval for the current list
+- `!interval [seconds]` - Sets a fixed interval when the current list fits its request budget
+- `!interval status` - Shows the current interval and tracking capacity
 
 ### Server Configuration
 - `!channel` - Sets the current channel as the notification channel for this server
@@ -78,7 +88,7 @@ A Discord bot that automatically monitors League of Legends players and sends no
 2. **Set Notification Channel**: Use `!channel` in the channel where you want notifications
 3. **Configure Game Mode** (optional): Use `!gamemode` to toggle server-wide filter (default: ranked-only)
 4. **Subscribe to Pings** (optional): Use `!ping` to get mentioned when games start
-5. **Automatic Monitoring**: The bot checks all tracked players every 30 seconds
+5. **Automatic Monitoring**: The bot checks all tracked players using the configured safe interval
 6. **Notifications**: When a tracked player starts a game, the bot sends a notification to servers that have configured a notification channel. Users who subscribed via `!ping` will be mentioned.
 
 ## Notes
@@ -89,4 +99,4 @@ A Discord bot that automatically monitors League of Legends players and sends no
 - **Notification Channels**: Each server can have its own notification channel
 - **Player Tracking**: Player tracking is global await(shared across all servers)
 - **Multi-Server**: Notifications are sent to all servers that have configured notification channels and match their game mode preference
-- The bot monitors players every 30 seconds, so there may be a slight delay in notifications
+- Polling introduces a notification delay of up to approximately the configured interval

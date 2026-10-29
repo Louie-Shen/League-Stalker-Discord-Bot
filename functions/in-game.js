@@ -1,5 +1,7 @@
 require('dotenv').config()
 
+const { riotFetch } = require('./riot-api');
+
 const QUEUE_TYPES = {
     420: { name: 'Ranked Solo/Duo', isRanked: true },
     440: { name: 'Ranked Flex', isRanked: true },
@@ -13,7 +15,7 @@ const QUEUE_TYPES = {
 
 async function stalkPlayer(puuid) {
     try {
-        const response = await fetch("https://na1.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/" + puuid,
+        const response = await riotFetch("https://na1.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/" + encodeURIComponent(puuid),
             {
                 headers: {
                     'X-Riot-Token': process.env.RIOT_TOKEN
