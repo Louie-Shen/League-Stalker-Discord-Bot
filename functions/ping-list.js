@@ -42,6 +42,10 @@ async function loadPingList() {
     await ensurePingListFile();
     try {
         const fileContent = await fs.readFile(PING_LIST_FILE, 'utf8');
+        if (!fileContent.trim()) {
+            await savePingList({});
+            return {};
+        }
         let data = JSON.parse(fileContent);
 
         const { data: migratedData, modified } = migratePingList(data);

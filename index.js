@@ -1,6 +1,6 @@
 require('dotenv').config();
 
-const { Client, GatewayIntentBits } = require('discord.js');
+const { Client, Events, GatewayIntentBits } = require('discord.js');
 const { getPlayerId } = require('./functions/get-player-Id');
 const { stalkPlayer } = require('./functions/in-game');
 const { startKeepAliveServer } = require('./functions/upTime');
@@ -35,7 +35,7 @@ const playerStatus = new Map();
 
 startKeepAliveServer();
 
-client.once('ready', () => {
+client.once(Events.ClientReady, () => {
     console.log(`Logged in as ${client.user.tag}!`);
     startMonitoring();
 });

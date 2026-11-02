@@ -3,3 +3,5 @@ node_modules/
 tracked-players.json
 guild-channels.json
 guild-settings.json
+ping-list.json
+bot-settings.json

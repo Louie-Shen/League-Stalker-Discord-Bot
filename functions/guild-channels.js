@@ -18,6 +18,10 @@ async function loadGuildChannels() {
     await ensureGuildChannelsFile();
     try {
         const data = await fs.readFile(GUILD_CHANNELS_FILE, 'utf8');
+        if (!data.trim()) {
+            await saveGuildChannels({});
+            return {};
+        }
         return JSON.parse(data);
     } catch (error) {
         console.error('Error loading guild channels:', error);

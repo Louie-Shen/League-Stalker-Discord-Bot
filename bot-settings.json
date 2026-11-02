@@ -1,6 +1,0 @@
-{
-  "polling": {
-    "mode": "automatic",
-    "intervalSeconds": null
-  }
-}

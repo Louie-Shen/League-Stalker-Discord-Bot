@@ -21,7 +21,16 @@ async function loadTrackedPlayers() {
     await ensureTrackedPlayersFile();
     try {
         const data = await fs.readFile(TRACKED_PLAYERS_FILE, 'utf8');
-        return JSON.parse(data);
+        if (!data.trim()) {
+            await saveTrackedPlayers([]);
+            return [];
+        }
+
+        const players = JSON.parse(data);
+        if (!Array.isArray(players)) {
+            throw new TypeError('Tracked players data must be an array');
+        }
+        return players;
     } catch (error) {
         console.error('Error loading tracked players:', error);
         return [];

@@ -18,6 +18,10 @@ async function loadGuildSettings() {
     await ensureGuildSettingsFile();
     try {
         const data = await fs.readFile(GUILD_SETTINGS_FILE, 'utf8');
+        if (!data.trim()) {
+            await saveGuildSettings({});
+            return {};
+        }
         return JSON.parse(data);
     } catch (error) {
         console.error('Error loading guild settings:', error);
