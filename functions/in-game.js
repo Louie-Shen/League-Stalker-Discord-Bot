@@ -57,6 +57,9 @@ async function stalkPlayer(puuid) {
             inGame: true,
             gameType: gameType,
             isRanked: isRanked,
+            gameId: data.gameId,
+            gameStartTime: data.gameStartTime,
+            platformId: data.platformId || 'NA1',
             rawGameType: data.gameType // Keep original just in case
         };
     } catch (err) {

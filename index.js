@@ -3,6 +3,7 @@ require('dotenv').config();
 const { Client, EmbedBuilder, Events, GatewayIntentBits, PermissionFlagsBits } = require('discord.js');
 const { getPlayerId } = require('./functions/get-player-Id');
 const { stalkPlayer } = require('./functions/in-game');
+const { buildPostGameLinks } = require('./functions/match-links');
 const { startKeepAliveServer } = require('./functions/upTime');
 const { addTrackedPlayer, removeTrackedPlayer, getTrackedPlayers } = require('./functions/tracked-players');
 const { setGuildChannel, getAllGuildChannels } = require('./functions/guild-channels');
@@ -320,7 +321,8 @@ client.on('messageCreate', async message => {
                         '`!join` — Join **followers of the goat** and receive game alerts',
                         '`!leave` — Leave the notification role',
                         '`!channel` — Send future alerts to the current channel',
-                        '`!gamemode` — Toggle ranked-only or all-game alerts'
+                        '`!gamemode` — Toggle ranked-only or all-game alerts',
+                        'Finished-game alerts include DPM.LOL and OP.GG links without a ping'
                     ].join('\n')
                 },
                 {
@@ -385,17 +387,22 @@ async function monitorLoop() {
                 if (currentStatus === null) {
                     // Preserve the previous status when Riot cannot answer the request.
                 } else {
-                    const previousStatus = playerStatus.get(player.puuid) || { inGame: false, gameType: null, isRanked: false };
+                    const previousStatus = playerStatus.get(player.puuid) || {
+                        inGame: false,
+                        gameType: null,
+                        isRanked: false,
+                        gameId: null
+                    };
 
-                    // Check if player just started a game
                     const startedGame = !previousStatus.inGame && currentStatus.inGame;
+                    const finishedGame = previousStatus.inGame && !currentStatus.inGame;
 
-                    // Update status
                     playerStatus.set(player.puuid, currentStatus);
 
-                    // If player just started a game, notify
                     if (startedGame) {
-                        notifyPlayerInGame(player, currentStatus);
+                        await notifyPlayerInGame(player, currentStatus);
+                    } else if (finishedGame) {
+                        await notifyPlayerGameFinished(player, previousStatus);
                     }
                 }
 
@@ -464,6 +471,45 @@ async function notifyPlayerInGame(player, gameStatus) {
         }
     } catch (error) {
         console.error('Error in notifyPlayerInGame:', error);
+    }
+}
+
+// Send match links after a tracked player leaves their game, without pinging anyone.
+async function notifyPlayerGameFinished(player, gameStatus) {
+    try {
+        if (!gameStatus.gameId) {
+            console.warn(`Finished game for ${player.username}#${player.tag} had no game ID.`);
+            return;
+        }
+
+        const guildChannels = await getAllGuildChannels();
+        const allSettings = await getAllGuildSettings();
+        const links = buildPostGameLinks(player, gameStatus);
+
+        for (const [guildId, channelId] of Object.entries(guildChannels)) {
+            try {
+                const rankedOnly = allSettings[guildId]?.rankedOnly !== false;
+                if (rankedOnly && !gameStatus.isRanked) {
+                    continue;
+                }
+
+                const channel = await client.channels.fetch(channelId);
+                if (channel) {
+                    const gameTypeText = gameStatus.gameType || 'game';
+                    await channel.send({
+                        content:
+                            `**${player.username}#${player.tag}** finished **${gameTypeText}**.\n` +
+                            `[View this match on DPM.LOL](${links.dpm}) • ` +
+                            `[View profile on OP.GG](${links.opgg})`,
+                        allowedMentions: { parse: [] }
+                    });
+                }
+            } catch (error) {
+                console.error(`Error sending game-finished notification to channel ${channelId}:`, error);
+            }
+        }
+    } catch (error) {
+        console.error('Error in notifyPlayerGameFinished:', error);
     }
 }
 
