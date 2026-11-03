@@ -1,13 +1,12 @@
 require('dotenv').config();
 
-const { Client, Events, GatewayIntentBits } = require('discord.js');
+const { Client, EmbedBuilder, Events, GatewayIntentBits, PermissionFlagsBits } = require('discord.js');
 const { getPlayerId } = require('./functions/get-player-Id');
 const { stalkPlayer } = require('./functions/in-game');
 const { startKeepAliveServer } = require('./functions/upTime');
 const { addTrackedPlayer, removeTrackedPlayer, getTrackedPlayers } = require('./functions/tracked-players');
 const { setGuildChannel, getAllGuildChannels } = require('./functions/guild-channels');
 const { setRankedOnly, getAllGuildSettings, getRankedOnly } = require('./functions/guild-settings');
-const { addPingSubscriber, removePingSubscriber, getUsersToPing } = require('./functions/ping-list');
 const {
     monitorConfig,
     calculateMinimumIntervalSeconds,
@@ -29,6 +28,8 @@ const client = new Client({
 });
 
 const TOKEN = process.env.DISCORD_TOKEN;
+const FOLLOWER_ROLE_NAME = 'followers of the goat';
+const followerRoleCreationPromises = new Map();
 
 // Store previous in-game status for each tracked player (puuid -> { inGame: boolean, gameType: string | null })
 const playerStatus = new Map();
@@ -40,158 +41,111 @@ client.once(Events.ClientReady, () => {
     startMonitoring();
 });
 
+async function getOrCreateFollowerRole(guild) {
+    if (followerRoleCreationPromises.has(guild.id)) {
+        return followerRoleCreationPromises.get(guild.id);
+    }
+
+    const rolePromise = (async () => {
+        const roles = await guild.roles.fetch();
+        const existingRole = roles.find(role => role.name.toLowerCase() === FOLLOWER_ROLE_NAME);
+        if (existingRole) return existingRole;
+
+        if (!guild.members.me?.permissions.has(PermissionFlagsBits.ManageRoles)) {
+            throw new Error('MISSING_MANAGE_ROLES');
+        }
+
+        return guild.roles.create({
+            name: FOLLOWER_ROLE_NAME,
+            mentionable: true,
+            reason: 'League Stalker notification followers'
+        });
+    })();
+
+    followerRoleCreationPromises.set(guild.id, rolePromise);
+    try {
+        return await rolePromise;
+    } finally {
+        followerRoleCreationPromises.delete(guild.id);
+    }
+}
+
+async function getFollowerRole(guild) {
+    const roles = await guild.roles.fetch();
+    return roles.find(role => role.name.toLowerCase() === FOLLOWER_ROLE_NAME) || null;
+}
+
 client.on('messageCreate', async message => {
     if (message.author.bot) return;
 
-    if (message.content.startsWith('!ping')) {
+    if (message.content.trim().toLowerCase() === '!join') {
         if (!message.guild) {
             return message.reply('This command can only be used in a server, not in DMs.');
         }
 
-        const args = message.content.slice('!ping'.length).trim().split(/\s+/);
-        // Default values
-        let type = 'all';
-        let targetPlayer = null;
-        let puuid = 'GLOBAL';
-
-        // !ping (no args) -> default to 'all' for GLOBAL
-        // !ping ranked -> 'ranked' for GLOBAL
-        // !ping all -> 'all' for GLOBAL
-        // !ping ranked bork#louie -> 'ranked' for specific
-        // !ping all bork#louie -> 'all' for specific
-
-        if (args[0] && args[0].length > 0) {
-            const firstArg = args[0].toLowerCase();
-            if (firstArg === 'ranked' || firstArg === 'all') {
-                type = firstArg;
-            } else {
-                return message.reply(`Invalid ping type: \`${firstArg}\`. Use \`ranked\` or \`all\`.`);
-            }
-        }
-
-        if (args[1]) {
-            // Player specified
-            // Reconstruct username#tag potentially? args[1] should be enough if no spaces
-            // But username might contain spaces? 
-            // "For example, !ping ranked bork#louie" - spaces in name?
-            // "League of Legends names can contain spaces".
-            // If args > 2, join them
-            const playerString = args.slice(1).join(' '); // "bork#louie" or "name with space#tag"
-
-            // Validate format
-            const parts = playerString.split('#');
-            if (parts.length < 2) {
-                return message.reply('Invalid player format. Please use username#tag (e.g., YourUsername#NA1)');
-            }
-
-            // We need to look up the player in tracked list to get PUUID
-            try {
-                const trackedPlayers = await getTrackedPlayers();
-                const matchedPlayer = trackedPlayers.find(p => `${p.username}#${p.tag}`.toLowerCase() === playerString.toLowerCase());
-
-                if (matchedPlayer) {
-                    puuid = matchedPlayer.puuid;
-                    targetPlayer = `${matchedPlayer.username}#${matchedPlayer.tag}`;
-                } else {
-                    return message.reply(`Player \`${playerString}\` is not in the tracked list. Use \`!list\` to see tracked players.`);
-                }
-            } catch (error) {
-                console.error(error);
-                return message.reply('Error checking tracked players.');
-            }
-        }
-
         try {
-            const result = await addPingSubscriber(message.guild.id, message.author.id, type, puuid);
-            message.reply(result.message);
+            const role = await getOrCreateFollowerRole(message.guild);
+            if (message.member.roles.cache.has(role.id)) {
+                return message.reply(`You already have the **${FOLLOWER_ROLE_NAME}** role.`);
+            }
+
+            await message.member.roles.add(role, 'Joined League Stalker notifications');
+            return message.reply(`You joined **${FOLLOWER_ROLE_NAME}** and will be notified when a tracked player starts a game.`);
         } catch (error) {
             console.error(error);
-            message.reply('Sorry, an error occurred while updating the ping list.');
+            if (error.message === 'MISSING_MANAGE_ROLES') {
+                return message.reply('I need the **Manage Roles** permission before I can create the notification role.');
+            }
+            return message.reply('I could not assign the notification role. Make sure my bot role has **Manage Roles** and is above **followers of the goat**.');
         }
     }
 
-    if (message.content.startsWith('!pingremove')) {
+    if (message.content.trim().toLowerCase() === '!leave') {
         if (!message.guild) {
             return message.reply('This command can only be used in a server, not in DMs.');
         }
 
-        const args = message.content.slice('!pingremove'.length).trim().split(/\s+/);
-        let puuid = 'GLOBAL';
-
-        if (args[0] && args[0].length > 0) {
-            const playerString = args.join(' ');
-            // Verify if user wants to remove specific player subscription
-            try {
-                const trackedPlayers = await getTrackedPlayers();
-                const matchedPlayer = trackedPlayers.find(p => `${p.username}#${p.tag}`.toLowerCase() === playerString.toLowerCase());
-
-                if (matchedPlayer) {
-                    puuid = matchedPlayer.puuid;
-                } else {
-                    return message.reply(`Player \`${playerString}\` is not in the tracked list.`);
-                }
-            } catch (error) {
-                console.error(error);
-                return message.reply('Error checking tracked players.');
-            }
-        }
-
         try {
-            const result = await removePingSubscriber(message.guild.id, message.author.id, puuid);
-            message.reply(result.message);
+            const role = await getFollowerRole(message.guild);
+            if (!role || !message.member.roles.cache.has(role.id)) {
+                return message.reply(`You are not currently in **${FOLLOWER_ROLE_NAME}**.`);
+            }
+
+            await message.member.roles.remove(role, 'Left League Stalker notifications');
+            return message.reply(`You left **${FOLLOWER_ROLE_NAME}** and will no longer receive game notifications.`);
         } catch (error) {
             console.error(error);
-            message.reply('Sorry, an error occurred while updating the ping list.');
+            return message.reply('I could not remove the notification role. Please ask a server administrator for help.');
         }
     }
 
-    if (message.content.startsWith('!find ')) {
-        const args = message.content.slice('!find '.length).trim();
-        const nameAndTag = args.split(',');
+    if (message.content === '!find' || message.content.startsWith('!find ')) {
+        const riotId = message.content.slice('!find '.length).trim();
+        const separatorIndex = riotId.lastIndexOf('#');
+        const username = riotId.slice(0, separatorIndex).trim();
+        const tag = riotId.slice(separatorIndex + 1).trim();
 
-        if (nameAndTag.length !== 2) {
-            return message.reply("Please provide the username and tag separated by a comma. Example: `!find YourUsername,NA1`");
-        }
-
-        const username = nameAndTag[0].trim();
-        const tag = nameAndTag[1].trim();
-
-        if (!username || !tag) {
-            return message.reply("Username or tag is missing. Example: `!find YourUsername,NA1`");
+        if (separatorIndex <= 0 || !username || !tag) {
+            return message.reply('Please provide a Riot ID in `Game Name#TAG` format. Example: `!find Hide on bush#KR1`');
         }
 
         try {
             const puuid = await getPlayerId(username, tag);
-            if (puuid) {
-                message.reply(`PUUID found: ${puuid}`);
-            } else {
-                message.reply("Sorry, I couldn't find a player with that username and tag.");
+            if (!puuid) {
+                return message.reply(`I could not find the Riot ID **${username}#${tag}**.`);
             }
-        } catch (error) {
-            console.error(error);
-            message.reply("Sorry, an error occurred while I was trying to find the player.");
-        }
-    }
 
-    if (message.content.startsWith('!stalk ')) {
-        const puuid = message.content.slice('!stalk '.length).trim();
-
-        if (!puuid) {
-            return message.reply("Please provide a PUUID. Example: `!stalk your-puuid-here`");
-        }
-
-        try {
             const matchStatus = await stalkPlayer(puuid);
             if (matchStatus === null) {
-                message.reply("Sorry, I couldn't check the player's status.");
-            } else if (matchStatus.inGame) {
-                message.reply(`In game! (${matchStatus.gameType || 'Unknown type'})`);
-            } else {
-                message.reply("Not in game!");
+                return message.reply(`I found **${username}#${tag}**, but could not check their live-game status.`);
             }
+            if (matchStatus.inGame) {
+                return message.reply(`**${username}#${tag}** is currently in a **${matchStatus.gameType || 'game'}** game.`);
+            }
+            return message.reply(`**${username}#${tag}** is not currently in a game.`);
         } catch (error) {
             console.error(error);
-            message.reply("Sorry, an error occurred while I was stalking.");
+            return message.reply('Sorry, an error occurred while checking that Riot ID.');
         }
     }
 
@@ -355,34 +309,41 @@ client.on('messageCreate', async message => {
     }
 
     if (message.content === '!help') {
-        const helpText = `
-**League Stalker Bot Commands:**
+        const helpEmbed = new EmbedBuilder()
+            .setColor(0xC89B3C)
+            .setTitle('League Stalker Bot Commands')
+            .setDescription('Use Riot IDs in `Game Name#TAG` format.')
+            .addFields(
+                {
+                    name: '🔔 Notifications',
+                    value: [
+                        '`!join` — Join **followers of the goat** and receive game alerts',
+                        '`!leave` — Leave the notification role',
+                        '`!channel` — Send future alerts to the current channel',
+                        '`!gamemode` — Toggle ranked-only or all-game alerts'
+                    ].join('\n')
+                },
+                {
+                    name: '👤 Player Tracking',
+                    value: [
+                        '`!track Game Name#TAG` — Add a player to continuous tracking',
+                        '`!untrack Game Name#TAG` — Stop tracking a player',
+                        '`!list` — Show all tracked players',
+                        '`!find Game Name#TAG` — Check whether a Riot ID is currently in game'
+                    ].join('\n')
+                },
+                {
+                    name: '⏱️ Polling',
+                    value: [
+                        '`!interval` — Enable the fastest safe automatic interval',
+                        '`!interval <seconds>` — Set a safe fixed interval',
+                        '`!interval status` — Show polling mode, interval, and capacity'
+                    ].join('\n')
+                }
+            )
+            .setFooter({ text: 'Example Riot ID: Hide on bush#KR1' });
 
-**Tracking:**
-\`!track <username>#<tag>\` - Track a new player (e.g., \`!track hide on bush#NA1\`)
-\`!untrack <username>#<tag>\` - Stop tracking a player
-\`!list\` - List all tracked players
-\`!find <username>,<tag>\` - Find a player's PUUID
-
-**Monitoring & Notifications:**
-\`!channel\` - Set the current channel for notifications
-\`!gamemode\` - Toggle server-wide filter (Ranked Only / All Games)
-\`!stalk <puuid>\` - Manually check a player's status by PUUID
-\`!interval\` - Use the fastest safe automatic polling interval
-\`!interval <seconds>\` - Set a fixed interval if the current list permits it
-\`!interval status\` - Show the current interval and tracking capacity
-
-**Ping Subscriptions:**
-\`!ping [ranked|all] [username#tag]\` - Subscribe to pings
-  • \`!ping\` (or \`!ping all\`) - Notify for ALL games from ALL players
-  • \`!ping ranked\` - Notify for RANKED games from ALL players
-  • \`!ping all hide on bush#NA1\` - Notify for ALL games from THIS player
-  • \`!ping ranked hide on bush#NA1\` - Notify for RANKED games from THIS player
-\`!pingremove [username#tag]\` - Unsubscribe
-  • \`!pingremove\` - Unsubscribe from global pings
-  • \`!pingremove hide on bush#NA1\` - Unsubscribe from specific player pings
-`;
-        message.reply(helpText);
+        return message.reply({ embeds: [helpEmbed] });
     }
 });
 
@@ -486,10 +447,15 @@ async function notifyPlayerInGame(player, gameStatus) {
                 const channel = await client.channels.fetch(channelId);
                 if (channel) {
                     const gameTypeText = gameStatus.gameType || 'game';
-                    const pingSubscribers = await getUsersToPing(guildId, isRanked, player.puuid);
-                    const pingMentions = pingSubscribers.map(userId => `<@${userId}>`).join(' ');
-                    const pingText = pingMentions ? ` ${pingMentions}` : '';
-                    await channel.send(`**${player.username}#${player.tag}** started a ${gameTypeText} game!${pingText}`);
+                    const guild = channel.guild;
+                    const followerRole = guild ? await getFollowerRole(guild) : null;
+                    const roleMention = followerRole ? ` <@&${followerRole.id}>` : '';
+                    const allowedRoleMentions = followerRole ? [followerRole.id] : [];
+
+                    await channel.send({
+                        content: `**${player.username}#${player.tag}** started **${gameTypeText}**!${roleMention}`,
+                        allowedMentions: { roles: allowedRoleMentions }
+                    });
                 }
             } catch (error) {
                 console.error(`Error sending notification to channel ${channelId}:`, error);

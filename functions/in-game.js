@@ -10,6 +10,7 @@ const QUEUE_TYPES = {
     450: { name: 'ARAM', isRanked: false },
     480: { name: 'Quickplay', isRanked: false },
     1700: { name: 'Arena', isRanked: false },
+    2400: { name: 'ARAM Mayhem', isRanked: false },
     // Add more as needed
 };
 

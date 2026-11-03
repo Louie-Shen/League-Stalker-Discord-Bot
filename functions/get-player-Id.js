@@ -16,7 +16,6 @@ async function getPlayerId(name, tag) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
         const data = await response.json();
-        console.log('PUUID found: ', data.puuid);
         return data.puuid;
     } catch (err) {
         console.error('Error fetching player ID:', err);
