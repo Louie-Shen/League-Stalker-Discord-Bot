@@ -1,0 +1,111 @@
+name: CI/CD
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-deployment
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '22'
+  GCP_PROJECT_ID: league-stalker-513500
+  GCP_WORKLOAD_IDENTITY_PROVIDER: projects/987205515198/locations/global/workloadIdentityPools/github-actions/providers/league-stalker
+  GCP_DEPLOY_SERVICE_ACCOUNT: github-deployer@league-stalker-513500.iam.gserviceaccount.com
+  GCE_INSTANCE: league-stalker-bot
+  GCE_ZONE: us-central1-c
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev
+
+      - name: Check syntax
+        run: npm run check
+
+      - name: Run tests
+        run: npm test
+
+  deploy:
+    name: Deploy to Google Compute Engine
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Set up Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Generate ephemeral SSH key
+        run: ssh-keygen -t ed25519 -f "$RUNNER_TEMP/google_compute_engine" -N ''
+
+      - name: Deploy exact commit
+        shell: bash
+        run: |
+          REMOTE_COMMAND=$(cat <<'EOF'
+          set -euo pipefail
+          sudo -u louiexshen -H bash -lc '
+            set -euo pipefail
+            cd /home/louiexshen/League-Stalker-Discord-Bot
+            git diff --quiet
+            git diff --cached --quiet
+            git fetch origin __DEPLOY_SHA__
+            git merge --ff-only __DEPLOY_SHA__
+            test "$(git rev-parse HEAD)" = "__DEPLOY_SHA__"
+            /usr/bin/npm ci --omit=dev
+            /usr/bin/npm audit --omit=dev
+            /usr/bin/npm run check
+            /usr/bin/npm test
+          '
+          sudo systemctl restart league-stalker-bot
+          sleep 5
+          sudo systemctl is-active --quiet league-stalker-bot
+          sudo systemctl status league-stalker-bot --no-pager -l
+          EOF
+          )
+          REMOTE_COMMAND="${REMOTE_COMMAND//__DEPLOY_SHA__/$GITHUB_SHA}"
+
+          gcloud compute ssh "$GCE_INSTANCE" \
+            --project="$GCP_PROJECT_ID" \
+            --zone="$GCE_ZONE" \
+            --tunnel-through-iap \
+            --ssh-key-file="$RUNNER_TEMP/google_compute_engine" \
+            --ssh-key-expire-after=5m \
+            --quiet \
+            --command="$REMOTE_COMMAND"
