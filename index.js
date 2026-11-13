@@ -309,6 +309,11 @@ client.on('messageCreate', async message => {
         }
     }
 
+        if (message.content.startsWith('!hi')) {
+        // Toggle between ranked-only and all games
+       message.reply("yo")
+    }
+
     if (message.content === '!help') {
         const helpEmbed = new EmbedBuilder()
             .setColor(0xC89B3C)
