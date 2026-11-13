@@ -307,6 +307,7 @@ client.on('messageCreate', async message => {
             console.error(error);
             message.reply("Sorry, an error occurred while toggling game mode.");
         }
+    }
 
     if (message.content === '!help') {
         const helpEmbed = new EmbedBuilder()
